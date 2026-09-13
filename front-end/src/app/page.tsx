@@ -17,7 +17,6 @@ export default function Page() {
     <AboutUs/>
     <ProjectSection/>
     <Footer/>
-    <WorldCupAnalytics/>
     </>
   )
 }
