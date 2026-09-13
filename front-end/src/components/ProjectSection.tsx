@@ -17,7 +17,7 @@ export default function ProjectsSection() {
             title="World Cup Data Analysis"
             subtitle="thehehehehwhw whwhwhwhwh whwhwhw whwh"
             description="A peaceful retreat surrounded by mountains and nature. t surrounded by t surrounded by t surrounded by t surrounded by"
-            href="/releases/meridian"
+            href="/analyses/worldcup"
             target="_blank"/>
             
 
