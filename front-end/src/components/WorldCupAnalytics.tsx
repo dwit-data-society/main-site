@@ -1,593 +1,1239 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
+  LineChart,
+  Line,
   ScatterChart,
   Scatter,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
 } from "recharts";
 
+type DataRecord = Record<string, any>;
+
+type ChartCardProps = {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+};
+
+function ChartCard({
+  title,
+  description,
+  children,
+}: ChartCardProps) {
+  return (
+    <section className="rounded-2xl border border-[#12577A] bg-[#0F1A23] p-5 shadow-lg">
+      <div className="mb-5">
+        <h2 className="text-xl font-semibold text-white">
+          {title}
+        </h2>
+
+        <p className="mt-2 text-sm leading-6 text-slate-300">
+          {description}
+        </p>
+      </div>
+
+      <div className="h-[350px] w-full">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function SectionHeading({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="mb-6">
+      <h1 className="text-2xl font-bold text-[#08AAA5]">
+        {title}
+      </h1>
+
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function EmptyChartMessage({
+  message,
+}: {
+  message: string;
+}) {
+  return (
+    <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-[#12577A] p-6 text-center text-sm leading-6 text-slate-300">
+      {message}
+    </div>
+  );
+}
+
+function normalizeArray(value: any): DataRecord[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  const possibleKeys = [
+    "data",
+    "results",
+    "records",
+    "items",
+    "values",
+    "rows",
+    "predictions",
+    "teams",
+    "players",
+  ];
+
+  for (const key of possibleKeys) {
+    if (Array.isArray(value[key])) {
+      return value[key];
+    }
+  }
+
+  return [];
+}
+
+function getText(
+  item: DataRecord,
+  keys: string[],
+  fallback = "Unknown",
+): string {
+  for (const key of keys) {
+    if (
+      item[key] !== undefined &&
+      item[key] !== null &&
+      String(item[key]).trim() !== ""
+    ) {
+      return String(item[key]);
+    }
+  }
+
+  return fallback;
+}
+
+function getNumber(
+  item: DataRecord,
+  keys: string[],
+): number | null {
+  for (const key of keys) {
+    if (
+      item[key] !== undefined &&
+      item[key] !== null &&
+      item[key] !== ""
+    ) {
+      const value = Number(item[key]);
+
+      if (Number.isFinite(value)) {
+        return value;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getFirstArrayValue(
+  item: DataRecord,
+  keys: string[],
+): any[] {
+  for (const key of keys) {
+    if (Array.isArray(item[key])) {
+      return item[key];
+    }
+  }
+
+  return [];
+}
+
 export default function WorldCupAnalytics() {
-  const [data, setData] = useState<Record<string, any[]>>({
-    attendees: [],
-    clubCounts: [],
-    clubDiversity: [],
-    refereeCards: [],
-    topMinutes: [],
-    topScorers: [],
-    topScoringTeams: [],
-    accuracyByStage: [],
-    actualHeatmap: [],
-    predictionHeatmap: [],
-    biasedFan: [],
-    biggestSurprises: [],
-    confidenceVsAccuracy: [],
-    luckiestPredictors: [],
-    mostMisjudgedTeams: [],
-    mostTrustedTeams: [],
-    scorePsychology: [],
-    tournamentWinners: [],
-  });
+  const [globalData, setGlobalData] = useState<
+    Record<string, DataRecord[]>
+  >({});
+
+  const [predictionData, setPredictionData] = useState<
+    Record<string, DataRecord[]>
+  >({});
+
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    async function loadAllData() {
+    async function loadData() {
       try {
-        const fetchJSON = async (url: string) => {
-          const res = await fetch(url);
-          if (!res.ok) return [];
-          const text = await res.text();
-          if (!text || text.trim().startsWith("<")) return [];
-          try {
-            const json = JSON.parse(text);
-            return Array.isArray(json) ? json.filter((i: any) => !i.title) : [];
-          } catch {
-            return [];
-          }
+        const files = {
+          attendees: "/data/worldcup/global/attendees.json",
+          clubCounts: "/data/worldcup/global/club_counts.json",
+          clubDiversity:
+            "/data/worldcup/global/club_diversity.json",
+          refereeCards:
+            "/data/worldcup/global/referee_cards.json",
+          topMinutes:
+            "/data/worldcup/global/top_minutes.json",
+          topScorer:
+            "/data/worldcup/global/top_scorer.json",
+          topScoringTeams:
+            "/data/worldcup/global/top_scoring_teams.json",
+
+          accuracyByStage:
+            "/data/worldcup/prediction/accuracy_by_stage.json",
+          actualHeatmap:
+            "/data/worldcup/prediction/actual_heatmap.json",
+          predictionHeatmap:
+            "/data/worldcup/prediction/prediction_heatmap.json",
+          confidenceVsAccuracy:
+            "/data/worldcup/prediction/confidence_vs_accuracy.json",
+          tournamentWinnerPredictions:
+            "/data/worldcup/prediction/tournament_winner_predictions.json",
         };
 
-        const [
-          attendees,
-          clubCounts,
-          clubDiversity,
-          refereeCards,
-          topMinutes,
-          topScorers,
-          topScoringTeams,
-          accuracyByStage,
-          actualHeatmap,
-          predictionHeatmap,
-          biasedFan,
-          biggestSurprises,
-          confidenceVsAccuracy,
-          luckiestPredictors,
-          mostMisjudgedTeams,
-          mostTrustedTeams,
-          scorePsychology,
-          tournamentWinners,
-        ] = await Promise.all([
-          fetchJSON("/data/worldcup/global/attendees.json"),
-          fetchJSON("/data/worldcup/global/club_counts.json"),
-          fetchJSON("/data/worldcup/global/club_diversity.json"),
-          fetchJSON("/data/worldcup/global/referee_cards.json"),
-          fetchJSON("/data/worldcup/global/top_minutes.json"),
-          fetchJSON("/data/worldcup/global/top_scorer.json"),
-          fetchJSON("/data/worldcup/global/top_scoring_teams.json"),
-          fetchJSON("/data/worldcup/prediction/accuracy_by_stage.json"),
-          fetchJSON("/data/worldcup/prediction/actual_heatmap.json"),
-          fetchJSON("/data/worldcup/prediction/prediction_heatmap.json"),
-          fetchJSON("/data/worldcup/prediction/biased_fan.json"),
-          fetchJSON("/data/worldcup/prediction/biggest_surprises.json"),
-          fetchJSON("/data/worldcup/prediction/confidence_vs_accuracy.json"),
-          fetchJSON("/data/worldcup/prediction/luckiest_predictors.json"),
-          fetchJSON("/data/worldcup/prediction/most_misjudged_teams.json"),
-          fetchJSON("/data/worldcup/prediction/most_trusted_teams.json"),
-          fetchJSON("/data/worldcup/prediction/score_psychology.json"),
-          fetchJSON("/data/worldcup/prediction/tournament_winner_predictions.json"),
-        ]);
+        const loadedEntries = await Promise.all(
+          Object.entries(files).map(async ([key, path]) => {
+            const response = await fetch(path);
 
-        setData({
-          attendees,
-          clubCounts,
-          clubDiversity,
-          refereeCards,
-          topMinutes,
-          topScorers,
-          topScoringTeams,
-          accuracyByStage,
-          actualHeatmap,
-          predictionHeatmap,
-          biasedFan,
-          biggestSurprises,
-          confidenceVsAccuracy,
-          luckiestPredictors,
-          mostMisjudgedTeams,
-          mostTrustedTeams,
-          scorePsychology,
-          tournamentWinners,
+            if (!response.ok) {
+              throw new Error(
+                `Could not load ${path}. HTTP status: ${response.status}`,
+              );
+            }
+
+            const json = await response.json();
+
+            return [key, normalizeArray(json)] as const;
+          }),
+        );
+
+        const loaded = Object.fromEntries(loadedEntries);
+
+        setGlobalData({
+          attendees: loaded.attendees,
+          clubCounts: loaded.clubCounts,
+          clubDiversity: loaded.clubDiversity,
+          refereeCards: loaded.refereeCards,
+          topMinutes: loaded.topMinutes,
+          topScorer: loaded.topScorer,
+          topScoringTeams: loaded.topScoringTeams,
+        });
+
+        setPredictionData({
+          accuracyByStage: loaded.accuracyByStage,
+          actualHeatmap: loaded.actualHeatmap,
+          predictionHeatmap: loaded.predictionHeatmap,
+          confidenceVsAccuracy: loaded.confidenceVsAccuracy,
+          tournamentWinnerPredictions:
+            loaded.tournamentWinnerPredictions,
         });
       } catch (err) {
-        console.error("Error loading JSON datasets", err);
+        console.error(err);
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load World Cup analytics data.",
+        );
       } finally {
         setLoading(false);
       }
     }
 
-    loadAllData();
+    loadData();
   }, []);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 font-mono">
-        Loading analytics structure...
+      <div className="rounded-xl border border-[#12577A] bg-[#0F1A23] p-6 text-slate-300">
+        Loading World Cup analytics...
       </div>
     );
   }
 
-  // Formatters for Global Metrics
-  const formattedAttendees = data.attendees.slice(0, 8).map((item: any) => ({
-    venue: item.venue ? item.venue.split(",")[0] : "Unknown",
-    attendance: item.attendance,
-  }));
+  if (error) {
+    return (
+      <div className="rounded-xl border border-red-500/40 bg-red-950/30 p-6 text-red-200">
+        {error}
+      </div>
+    );
+  }
 
-  const formattedTopScoringTeams = data.topScoringTeams.slice(0, 10).map((item: any) => ({
-    team: item.team ?? item.name,
-    goals: item.goals ?? item.total_goals ?? 0,
-  }));
+  /*
+   * GLOBAL DATA
+   */
 
-  const formattedTopScorers = data.topScorers.slice(0, 8).map((item: any) => ({
-    player: item.player,
-    goals: item.goals,
-  }));
+  const attendeesData = (globalData.attendees || [])
+    .map((item) => ({
+      name: getText(item, [
+        "venue",
+        "venue_name",
+        "stadium",
+        "name",
+      ]),
+      attendance: getNumber(item, [
+        "attendance",
+        "attendees",
+        "total_attendance",
+        "total",
+      ]),
+    }))
+    .filter(
+      (item) =>
+        item.name !== "Unknown" &&
+        item.attendance !== null &&
+        item.attendance > 0,
+    )
+    .sort(
+      (a, b) =>
+        (b.attendance ?? 0) - (a.attendance ?? 0),
+    )
+    .slice(0, 10);
 
-  const formattedReferees = data.refereeCards.slice(0, 8).map((item: any) => ({
-    referee: item.referee,
-    yellow: item.total_yellow,
-    red: item.total_red,
-  }));
+  const clubCountsData = (globalData.clubCounts || [])
+    .map((item) => ({
+      name: getText(item, [
+        "club",
+        "club_name",
+        "team",
+        "name",
+      ]),
+      count: getNumber(item, [
+        "count",
+        "players",
+        "player_count",
+        "total",
+      ]),
+    }))
+    .filter(
+      (item) =>
+        item.name !== "Unknown" &&
+        item.count !== null &&
+        item.count > 0,
+    )
+    .sort(
+      (a, b) => (b.count ?? 0) - (a.count ?? 0),
+    )
+    .slice(0, 10);
 
-  const formattedClubCounts = data.clubCounts.slice(0, 8).map((item: any) => ({
-    club: item.club,
-    player_count: item.player_count,
-  }));
+  /*
+   * FIXED CLUB DIVERSITY STRUCTURE
 
-  const formattedClubDiversity = data.clubDiversity.slice(0, 8).map((item: any) => ({
-    team: item.team,
-    unique_clubs_represented: item.unique_clubs_represented,
-  }));
+   {
+     "team": "Switzerland",
+     "unique_clubs_represented": 22
+   }
+   */
 
-  const formattedTopMinutes = data.topMinutes.slice(0, 8).map((item: any) => ({
-    player: item.player,
-    minutes: item.minutes,
-  }));
+  const clubDiversityData = (globalData.clubDiversity || [])
+    .map((item) => ({
+      name: getText(item, [
+        "team",
+        "team_name",
+        "national_team",
+        "name",
+      ]),
+      diversity: getNumber(item, [
+        "unique_clubs_represented",
+        "unique_clubs",
+        "club_diversity",
+        "diversity",
+        "count",
+      ]),
+    }))
+    .filter(
+      (item) =>
+        item.name !== "Unknown" &&
+        item.diversity !== null &&
+        item.diversity > 0,
+    )
+    .sort(
+      (a, b) =>
+        (b.diversity ?? 0) - (a.diversity ?? 0),
+    )
+    .slice(0, 15);
 
-  // Formatters for Prediction Metrics
-  const formattedAccuracy = data.accuracyByStage.map((item: any) => ({
-    stage: item.match_type ?? item.stage ?? "Stage",
-    accuracy: item.accuracy,
-  }));
+  /*
+   * REFEREE CARD DATA
 
-  // Heatmap Matrices for P2 and P3
-  const maxGoal1Actual = Math.max(0, ...data.actualHeatmap.map((d: any) => d.goal1 ?? 0), 5);
-  const maxGoal2Actual = Math.max(0, ...data.actualHeatmap.map((d: any) => d.goal2 ?? 0), 5);
-  const actualGrid = Array.from({ length: maxGoal1Actual + 1 }, () => Array(maxGoal2Actual + 1).fill(0));
-  data.actualHeatmap.forEach((d: any) => {
-    if (d.goal1 <= maxGoal1Actual && d.goal2 <= maxGoal2Actual) {
-      actualGrid[d.goal1][d.goal2] = d.count;
-    }
-  });
+   Supports common possible structures such as:
 
-  const maxGoal1Pred = Math.max(0, ...data.predictionHeatmap.map((d: any) => d.goal1 ?? 0), 5);
-  const maxGoal2Pred = Math.max(0, ...data.predictionHeatmap.map((d: any) => d.goal2 ?? 0), 5);
-  const predGrid = Array.from({ length: maxGoal1Pred + 1 }, () => Array(maxGoal2Pred + 1).fill(0));
-  data.predictionHeatmap.forEach((d: any) => {
-    if (d.goal1 <= maxGoal1Pred && d.goal2 <= maxGoal2Pred) {
-      predGrid[d.goal1][d.goal2] = d.count;
-    }
-  });
+   {
+     "referee": "Name",
+     "yellow_cards": 20,
+     "red_cards": 2
+   }
 
-  const formattedScorePsych = data.scorePsychology.map((item: any) => ({
-    score: item.score,
-    timesPredicted: item.timesPredicted,
-    timesOccurred: item.timesOccurred,
-  }));
+   or:
 
-  const formattedWinners = data.tournamentWinners.map((item: any) => ({
-    name: item.name,
-    pickPercent: item.pickPercent,
-  }));
+   {
+     "referee": "Name",
+     "yellow": 20,
+     "red": 2
+   }
+   */
 
-  const formattedMisjudged = data.mostMisjudgedTeams.slice(0, 8).map((item: any) => ({
-    team: item.team ?? item.name,
-    predicted: item.predicted ?? item.errorRate ?? 15,
-    actual: item.actual ?? item.error_rate ?? 10,
-  }));
+  const refereeCardsData = (globalData.refereeCards || [])
+    .map((item) => {
+      const yellow =
+        getNumber(item, [
+          "yellow_cards",
+          "yellow_card",
+          "yellow",
+          "total_yellow_cards",
+        ]) ?? 0;
+
+      const red =
+        getNumber(item, [
+          "red_cards",
+          "red_card",
+          "red",
+          "total_red_cards",
+        ]) ?? 0;
+
+      return {
+        name: getText(item, [
+          "referee",
+          "referee_name",
+          "official",
+          "name",
+        ]),
+        yellow,
+        red,
+        total: yellow + red,
+      };
+    })
+    .filter(
+      (item) =>
+        item.name !== "Unknown" &&
+        item.total > 0,
+    )
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 15);
+
+  const topMinutesData = (globalData.topMinutes || [])
+    .map((item) => ({
+      name: getText(item, [
+        "player",
+        "player_name",
+        "name",
+      ]),
+      minutes: getNumber(item, [
+        "minutes",
+        "total_minutes",
+        "playing_time",
+      ]),
+    }))
+    .filter(
+      (item) =>
+        item.name !== "Unknown" &&
+        item.minutes !== null &&
+        item.minutes > 0,
+    )
+    .sort(
+      (a, b) =>
+        (b.minutes ?? 0) - (a.minutes ?? 0),
+    )
+    .slice(0, 10);
+
+  const topScorerData = (globalData.topScorer || [])
+    .map((item) => ({
+      name: getText(item, [
+        "player",
+        "player_name",
+        "name",
+      ]),
+      goals: getNumber(item, [
+        "goals",
+        "total_goals",
+        "goal_count",
+      ]),
+    }))
+    .filter(
+      (item) =>
+        item.name !== "Unknown" &&
+        item.goals !== null &&
+        item.goals > 0,
+    )
+    .sort(
+      (a, b) => (b.goals ?? 0) - (a.goals ?? 0),
+    )
+    .slice(0, 10);
+
+  const topScoringTeamsData = (globalData.topScoringTeams || [])
+    .map((item) => ({
+      name: getText(item, [
+        "team",
+        "team_name",
+        "name",
+      ]),
+      goals: getNumber(item, [
+        "goals",
+        "total_goals",
+        "team_goals",
+      ]),
+      goalsPer90: getNumber(item, [
+        "goals_per_90",
+        "goalsPer90",
+        "goals90",
+        "goals_per90",
+      ]),
+    }))
+    .filter(
+      (item) =>
+        item.name !== "Unknown" &&
+        (item.goals !== null || item.goalsPer90 !== null),
+    );
+
+  /*
+   * PREDICTION DATA
+   */
+
+  const accuracyByStageData = (predictionData.accuracyByStage || [])
+    .map((item) => ({
+      stage: `Type ${getText(item, [
+        "match_type",
+        "stage",
+        "type",
+      ])}`,
+      accuracy: getNumber(item, [
+        "accuracy",
+        "accuracy_percentage",
+        "percentage",
+      ]),
+    }))
+    .filter(
+      (item) =>
+        item.accuracy !== null &&
+        item.accuracy >= 0,
+    );
+
+  /*
+   * ACTUAL SCORELINE DATA
+
+   {
+     "score": "2-1",
+     "timesOccurred": 9
+   }
+   */
+
+  const actualHeatmapData = (predictionData.actualHeatmap || [])
+    .map((item) => ({
+      score: getText(item, [
+        "score",
+        "scoreline",
+        "result",
+      ]),
+      occurrences: getNumber(item, [
+        "timesOccurred",
+        "times_occurred",
+        "occurrences",
+        "count",
+      ]),
+    }))
+    .filter(
+      (item) =>
+        item.score !== "Unknown" &&
+        item.occurrences !== null &&
+        item.occurrences > 0,
+    )
+    .sort(
+      (a, b) =>
+        (b.occurrences ?? 0) - (a.occurrences ?? 0),
+    )
+    .slice(0, 20);
+
+  /*
+   * PREDICTED SCORELINE DATA
+
+   {
+     "score": "2-1",
+     "timesPredicted": 403,
+     "timesOccurred": 9
+   }
+   */
+
+  const predictionHeatmapData = (
+    predictionData.predictionHeatmap || []
+  )
+    .map((item) => ({
+      score: getText(item, [
+        "score",
+        "scoreline",
+        "result",
+      ]),
+      predictions: getNumber(item, [
+        "timesPredicted",
+        "times_predicted",
+        "predictions",
+        "count",
+      ]),
+    }))
+    .filter(
+      (item) =>
+        item.score !== "Unknown" &&
+        item.predictions !== null &&
+        item.predictions > 0,
+    )
+    .sort(
+      (a, b) =>
+        (b.predictions ?? 0) - (a.predictions ?? 0),
+    )
+    .slice(0, 20);
+
+  const confidenceData = (
+    predictionData.confidenceVsAccuracy || []
+  )
+    .map((item) => ({
+      confidence: getNumber(item, [
+        "consensus",
+        "confidence",
+        "consensus_percentage",
+      ]),
+      accuracy: getNumber(item, [
+        "accuracy",
+        "accuracy_percentage",
+      ]),
+    }))
+    .filter(
+      (item) =>
+        item.confidence !== null &&
+        item.accuracy !== null,
+    );
+
+  const winnerData = (
+    predictionData.tournamentWinnerPredictions || []
+  )
+    .map((item) => ({
+      name: getText(item, [
+        "team",
+        "team_name",
+        "winner",
+        "name",
+      ]),
+      predictions: getNumber(item, [
+        "picks",
+        "predictions",
+        "count",
+        "timesPredicted",
+      ]),
+    }))
+    .filter(
+      (item) =>
+        item.name !== "Unknown" &&
+        item.predictions !== null &&
+        item.predictions > 0,
+    )
+    .sort(
+      (a, b) =>
+        (b.predictions ?? 0) - (a.predictions ?? 0),
+    );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-12 space-y-16 font-sans">
-      
-      {/* Title Header */}
-      <div className="max-w-6xl mx-auto border-b border-slate-800 pb-6 space-y-2">
-        <span className="text-emerald-400 font-mono text-xs uppercase tracking-widest">Analytics Taxonomy Hierarchy</span>
-        <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight">World Cup 2026 Comprehensive Dashboard</h1>
-        <p className="text-slate-400 text-sm max-w-2xl">
-          Exact structural layout mapping Global Analytics and Prediction Analytics following your hierarchical tree.
+    <main className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mb-12">
+        <h1 className="text-4xl font-bold text-white">
+          World Cup Analytics
+        </h1>
+
+        <p className="mt-3 max-w-3xl text-slate-300">
+          An analytical overview of World Cup performance,
+          player statistics, stadium attendance, and prediction
+          behaviour.
         </p>
       </div>
 
-      <div className="max-w-6xl mx-auto space-y-20">
+      <section className="mb-16">
+        <SectionHeading
+          title="Global World Cup Analytics"
+          description="Statistical patterns from teams, players, stadiums, referees, and match performance."
+        />
 
-        {/* ======================================================== */}
-        {/* WORLD CUP 2026 — GLOBAL ANALYTICS                        */}
-        {/* ======================================================== */}
-        <section className="space-y-10">
-          <div className="border-l-4 border-emerald-500 pl-4">
-            <h2 className="text-2xl font-bold tracking-tight text-emerald-400 font-mono">WORLD CUP 2026 — GLOBAL ANALYTICS</h2>
-            <p className="text-slate-400 text-sm">Stadium metrics, squads, player performance workloads, and official records.</p>
-          </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <ChartCard
+            title="1. Stadium Attendance"
+            description="The ten stadiums with the highest recorded attendance."
+          >
+            {attendeesData.length === 0 ? (
+              <EmptyChartMessage message="No valid stadium attendance data was found." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={attendeesData}
+                  layout="vertical"
+                  margin={{
+                    top: 10,
+                    right: 20,
+                    left: 30,
+                    bottom: 10,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
 
-          {/* ├── Stadium & Competition */}
-          <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-slate-300 font-mono border-b border-slate-800 pb-2">├── Stadium & Competition</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pl-2 md:pl-6">
-              
-              {/* 1. attendees */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-emerald-400">Top Venues by Attendance</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Horizontal bar</span>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={formattedAttendees} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 40 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis type="number" stroke="#64748b" fontSize={10} />
-                      <YAxis dataKey="venue" type="category" stroke="#64748b" fontSize={10} width={90} />
-                      <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Bar dataKey="attendance" fill="#10b981" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                  <XAxis type="number" stroke="#CBD5E1" />
 
-              {/* 6. club_diversity */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-emerald-400">Teams with Greatest Club Diversity</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Ranked cards/bar</span>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={formattedClubDiversity} margin={{ top: 5, right: 20, bottom: 25, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis dataKey="team" stroke="#64748b" fontSize={9} angle={-30} textAnchor="end" />
-                      <YAxis stroke="#64748b" fontSize={10} />
-                      <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Bar dataKey="unique_clubs_represented" fill="#6ee7b7" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={130}
+                    stroke="#CBD5E1"
+                    tick={{ fontSize: 11 }}
+                  />
 
-            </div>
-          </div>
+                  <Tooltip />
 
-          {/* ├── Player & Team Performance */}
-          <div className="space-y-6 pt-4">
-            <h3 className="text-lg font-semibold text-slate-300 font-mono border-b border-slate-800 pb-2">├── Player & Team Performance</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pl-2 md:pl-6">
-              
-              {/* 5. club_counts */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-emerald-400">Top Clubs Represented</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Horizontal bar</span>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={formattedClubCounts} margin={{ top: 5, right: 20, bottom: 25, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis dataKey="club" stroke="#64748b" fontSize={9} angle={-30} textAnchor="end" />
-                      <YAxis stroke="#64748b" fontSize={10} />
-                      <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Bar dataKey="player_count" fill="#34d399" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                  <Bar
+                    dataKey="attendance"
+                    fill="#08AAA5"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
 
-              {/* 7. top_minutes */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-emerald-400">Most Minutes Played</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Player leaderboard/bar</span>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={formattedTopMinutes} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 40 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis type="number" stroke="#64748b" fontSize={10} />
-                      <YAxis dataKey="player" type="category" stroke="#64748b" fontSize={10} width={80} />
-                      <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Bar dataKey="minutes" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+          <ChartCard
+            title="2. Players by Club"
+            description="The clubs with the highest number of represented players."
+          >
+            {clubCountsData.length === 0 ? (
+              <EmptyChartMessage message="No valid club-count data was found." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={clubCountsData}
+                  layout="vertical"
+                  margin={{
+                    top: 10,
+                    right: 20,
+                    left: 30,
+                    bottom: 10,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
 
-              {/* 3. top_scorer */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-emerald-400">Top Scorers</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Player leaderboard</span>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={formattedTopScorers} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 40 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis type="number" stroke="#64748b" fontSize={10} />
-                      <YAxis dataKey="player" type="category" stroke="#64748b" fontSize={10} width={80} />
-                      <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Bar dataKey="goals" fill="#10b981" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                  <XAxis type="number" stroke="#CBD5E1" />
 
-              {/* 2. top_scoring_teams */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-emerald-400">Top 10 Teams</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Horizontal bar</span>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={formattedTopScoringTeams} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 40 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis type="number" stroke="#64748b" fontSize={10} />
-                      <YAxis dataKey="team" type="category" stroke="#64748b" fontSize={10} width={80} />
-                      <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Bar dataKey="goals" fill="#059669" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={130}
+                    stroke="#CBD5E1"
+                    tick={{ fontSize: 11 }}
+                  />
 
-            </div>
-          </div>
+                  <Tooltip />
 
-          {/* ├── Match Officials */}
-          <div className="space-y-6 pt-4">
-            <h3 className="text-lg font-semibold text-slate-300 font-mono border-b border-slate-800 pb-2">├── Match Officials</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pl-2 md:pl-6">
-              
-              {/* 4. referee_cards */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg md:col-span-2">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-emerald-400">Cards by Referee</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Bar / stacked bar</span>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={formattedReferees} margin={{ top: 5, right: 20, bottom: 25, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis dataKey="referee" stroke="#64748b" fontSize={9} angle={-30} textAnchor="end" />
-                      <YAxis stroke="#64748b" fontSize={10} />
-                      <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Bar dataKey="yellow" stackId="a" fill="#facc15" name="Yellow Cards" />
-                      <Bar dataKey="red" stackId="a" fill="#f87171" name="Red Cards" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                  <Bar
+                    dataKey="count"
+                    fill="#1479A8"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
 
-            </div>
-          </div>
+          <ChartCard
+            title="3. Club Diversity by National Team"
+            description="National teams ranked by the number of unique clubs represented in their squads."
+          >
+            {clubDiversityData.length === 0 ? (
+              <EmptyChartMessage message="No valid club-diversity data was found. Check that the file uses team and unique_clubs_represented." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={clubDiversityData}
+                  layout="vertical"
+                  margin={{
+                    top: 10,
+                    right: 20,
+                    left: 30,
+                    bottom: 10,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
 
-        </section>
+                  <XAxis
+                    type="number"
+                    stroke="#CBD5E1"
+                  />
 
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={130}
+                    stroke="#CBD5E1"
+                    tick={{ fontSize: 11 }}
+                  />
 
-        {/* ======================================================== */}
-        {/* WORLD CUP 2026 — PREDICTION ANALYTICS                    */}
-        {/* ======================================================== */}
-        <section className="space-y-10 pt-10 border-t border-slate-800">
-          <div className="border-l-4 border-purple-500 pl-4">
-            <h2 className="text-2xl font-bold tracking-tight text-purple-400 font-mono">WORLD CUP 2026 — PREDICTION ANALYTICS</h2>
-            <p className="text-slate-400 text-sm">Predictive accuracy, scoreline heatmap distributions, psychology gaps, and tournament expectations.</p>
-          </div>
+                  <Tooltip />
 
-          {/* ├── Prediction Performance */}
-          <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-slate-300 font-mono border-b border-slate-800 pb-2">├── Prediction Performance</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pl-2 md:pl-6">
-              
-              {/* Prediction Accuracy by Match Type */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-purple-400">Prediction Accuracy by Match Type</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Bar Chart</span>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={formattedAccuracy} margin={{ top: 5, right: 20, bottom: 25, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis dataKey="stage" stroke="#64748b" fontSize={9} angle={-30} textAnchor="end" />
-                      <YAxis stroke="#64748b" fontSize={10} domain={[0, 100]} />
-                      <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Bar dataKey="accuracy" fill="#c084fc" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                  <Bar
+                    dataKey="diversity"
+                    fill="#12577A"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
 
-              {/* Confidence vs Accuracy */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-purple-400">Confidence vs Accuracy</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Scatter Plot</span>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis type="number" dataKey="consensus" name="Consensus" stroke="#64748b" fontSize={10} unit="%" />
-                      <YAxis type="number" dataKey="confidenceGap" name="Gap" stroke="#64748b" fontSize={10} />
-                      <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Scatter data={data.confidenceVsAccuracy} fill="#c084fc" />
-                    </ScatterChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+          <ChartCard
+            title="4. Referee Cards"
+            description="Yellow and red cards recorded for referees."
+          >
+            {refereeCardsData.length === 0 ? (
+              <EmptyChartMessage message="No valid referee card data was found. The exact referee_cards.json structure is needed to map its fields correctly." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={refereeCardsData}
+                  layout="vertical"
+                  margin={{
+                    top: 10,
+                    right: 20,
+                    left: 30,
+                    bottom: 10,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
 
-            </div>
-          </div>
+                  <XAxis
+                    type="number"
+                    stroke="#CBD5E1"
+                  />
 
-          {/* ├── Prediction vs Reality */}
-          <div className="space-y-6 pt-4">
-            <h3 className="text-lg font-semibold text-slate-300 font-mono border-b border-slate-800 pb-2">├── Prediction vs Reality</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pl-2 md:pl-6">
-              
-              {/* Actual Scoreline Heatmap */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-purple-400 text-sm">Actual Scoreline Heatmap</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Matrix</span>
-                </div>
-                <div className="overflow-x-auto max-h-60 flex justify-center">
-                  <div className="inline-grid gap-1" style={{ gridTemplateColumns: `repeat(${maxGoal2Actual + 1}, minmax(0, 1fr))` }}>
-                    {actualGrid.map((row, rIdx) =>
-                      row.map((val, cIdx) => {
-                        const intensity = val > 0 ? Math.min(val / 10, 1) : 0;
-                        return (
-                          <div
-                            key={`actual-${rIdx}-${cIdx}`}
-                            title={`Goals 1-2: ${rIdx}-${cIdx}, Count: ${val}`}
-                            className="w-7 h-7 flex items-center justify-center text-[9px] font-mono rounded"
-                            style={{
-                              backgroundColor: val > 0 ? `rgba(168, 85, 247, ${Math.max(intensity, 0.2)})` : "#1e293b",
-                              color: val > 0 ? "#ffffff" : "#64748b"
-                            }}
-                          >
-                            {val}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-                <p className="text-[11px] text-slate-400 text-center">Row: Team 1 Goals | Col: Team 2 Goals</p>
-              </div>
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={130}
+                    stroke="#CBD5E1"
+                    tick={{ fontSize: 11 }}
+                  />
 
-              {/* Predicted Scoreline Heatmap */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-purple-400 text-sm">Predicted Scoreline Heatmap</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Matrix</span>
-                </div>
-                <div className="overflow-x-auto max-h-60 flex justify-center">
-                  <div className="inline-grid gap-1" style={{ gridTemplateColumns: `repeat(${maxGoal2Pred + 1}, minmax(0, 1fr))` }}>
-                    {predGrid.map((row, rIdx) =>
-                      row.map((val, cIdx) => {
-                        const intensity = val > 0 ? Math.min(val / 100, 1) : 0;
-                        return (
-                          <div
-                            key={`pred-${rIdx}-${cIdx}`}
-                            title={`Goals 1-2: ${rIdx}-${cIdx}, Count: ${val}`}
-                            className="w-7 h-7 flex items-center justify-center text-[9px] font-mono rounded"
-                            style={{
-                              backgroundColor: val > 0 ? `rgba(216, 180, 254, ${Math.max(intensity, 0.2)})` : "#1e293b",
-                              color: val > 0 ? "#020617" : "#64748b"
-                            }}
-                          >
-                            {val}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-                <p className="text-[11px] text-slate-400 text-center">Row: Team 1 Goals | Col: Team 2 Goals</p>
-              </div>
+                  <Tooltip />
 
-              {/* Predicted Scorelines vs Actual Occurrences */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-purple-400 text-sm">Scorelines vs Actuals</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Grouped Bar</span>
-                </div>
-                <div className="h-60 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={formattedScorePsych} margin={{ top: 5, right: 10, bottom: 25, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis dataKey="score" stroke="#64748b" fontSize={9} angle={-30} textAnchor="end" />
-                      <YAxis stroke="#64748b" fontSize={10} />
-                      <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Bar dataKey="timesPredicted" fill="#c084fc" name="Predicted" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="timesOccurred" fill="#34d399" name="Actual" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                  <Legend />
 
-            </div>
-          </div>
+                  <Bar
+                    dataKey="yellow"
+                    stackId="cards"
+                    fill="#08AAA5"
+                    name="Yellow cards"
+                  />
 
-          {/* ├── Tournament Expectations */}
-          <div className="space-y-6 pt-4">
-            <h3 className="text-lg font-semibold text-slate-300 font-mono border-b border-slate-800 pb-2">├── Tournament Expectations</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pl-2 md:pl-6">
-              
-              {/* Tournament Winner Predictions */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-purple-400">Tournament Winner Predictions</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Bar Chart</span>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={formattedWinners} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis type="number" stroke="#64748b" fontSize={10} unit="%" />
-                      <YAxis dataKey="name" type="category" stroke="#64748b" fontSize={10} width={70} />
-                      <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Bar dataKey="pickPercent" fill="#e879f9" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                  <Bar
+                    dataKey="red"
+                    stackId="cards"
+                    fill="#DC2626"
+                    name="Red cards"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
 
-              {/* Predicted vs Actual Goals by Team */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-lg">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-semibold text-purple-400">Predicted vs Actual Goals by Team</h4>
-                  <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-300">Grouped Bar</span>
-                </div>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={formattedMisjudged} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 30 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis type="number" stroke="#64748b" fontSize={10} />
-                      <YAxis dataKey="team" type="category" stroke="#64748b" fontSize={10} width={80} />
-                      <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "#1e293b", fontSize: "12px", color: "#f8fafc" }} />
-                      <Bar dataKey="predicted" fill="#9333ea" name="Predicted Goals" radius={[0, 4, 4, 0]} />
-                      <Bar dataKey="actual" fill="#c084fc" name="Actual Goals" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+          <ChartCard
+            title="5. Player Playing Time"
+            description="Players with the highest recorded playing time."
+          >
+            {topMinutesData.length === 0 ? (
+              <EmptyChartMessage message="No valid playing-time data was found." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={topMinutesData}
+                  layout="vertical"
+                  margin={{
+                    top: 10,
+                    right: 20,
+                    left: 30,
+                    bottom: 10,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
 
-            </div>
-          </div>
+                  <XAxis type="number" stroke="#CBD5E1" />
 
-        </section>
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={130}
+                    stroke="#CBD5E1"
+                    tick={{ fontSize: 11 }}
+                  />
 
-      </div>
-    </div>
+                  <Tooltip />
+
+                  <Bar
+                    dataKey="minutes"
+                    fill="#1479A8"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title="6. Top Goal Scorers"
+            description="The leading goal scorers according to their recorded goal totals."
+          >
+            {topScorerData.length === 0 ? (
+              <EmptyChartMessage message="No valid goal-scoring data was found." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={topScorerData}
+                  layout="vertical"
+                  margin={{
+                    top: 10,
+                    right: 20,
+                    left: 30,
+                    bottom: 10,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
+
+                  <XAxis type="number" stroke="#CBD5E1" />
+
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={130}
+                    stroke="#CBD5E1"
+                    tick={{ fontSize: 11 }}
+                  />
+
+                  <Tooltip />
+
+                  <Bar
+                    dataKey="goals"
+                    fill="#08AAA5"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title="7. Team Goals vs Goals per 90 Minutes"
+            description="The relationship between total team goals and goals scored per 90 minutes."
+          >
+            {topScoringTeamsData.length === 0 ? (
+              <EmptyChartMessage message="No valid team-scoring data was found." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart
+                  margin={{
+                    top: 20,
+                    right: 20,
+                    bottom: 20,
+                    left: 10,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
+
+                  <XAxis
+                    type="number"
+                    dataKey="goalsPer90"
+                    name="Goals per 90"
+                    stroke="#CBD5E1"
+                  />
+
+                  <YAxis
+                    type="number"
+                    dataKey="goals"
+                    name="Total goals"
+                    stroke="#CBD5E1"
+                  />
+
+                  <Tooltip />
+
+                  <Scatter
+                    data={topScoringTeamsData}
+                    fill="#08AAA5"
+                  />
+                </ScatterChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+        </div>
+      </section>
+
+      <section>
+        <SectionHeading
+          title="Prediction Analytics"
+          description="Prediction accuracy, scoreline expectations, confidence levels, and tournament winner preferences."
+        />
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <ChartCard
+            title="1. Prediction Accuracy by Match Type"
+            description="Prediction accuracy across the different match types."
+          >
+            {accuracyByStageData.length === 0 ? (
+              <EmptyChartMessage message="No valid accuracy data was found." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={accuracyByStageData}>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
+
+                  <XAxis
+                    dataKey="stage"
+                    stroke="#CBD5E1"
+                  />
+
+                  <YAxis stroke="#CBD5E1" />
+
+                  <Tooltip />
+
+                  <Line
+                    type="monotone"
+                    dataKey="accuracy"
+                    stroke="#08AAA5"
+                    strokeWidth={3}
+                    name="Accuracy"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title="2. Actual Scoreline Distribution"
+            description="The frequency of actual scorelines recorded in the matches."
+          >
+            {actualHeatmapData.length === 0 ? (
+              <EmptyChartMessage message="No valid actual scoreline data was found. Expected score and timesOccurred fields." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={actualHeatmapData}
+                  margin={{
+                    top: 10,
+                    right: 20,
+                    left: 10,
+                    bottom: 70,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
+
+                  <XAxis
+                    dataKey="score"
+                    stroke="#CBD5E1"
+                    angle={-45}
+                    textAnchor="end"
+                    interval={0}
+                  />
+
+                  <YAxis stroke="#CBD5E1" />
+
+                  <Tooltip />
+
+                  <Bar
+                    dataKey="occurrences"
+                    fill="#08AAA5"
+                    name="Actual occurrences"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title="3. Predicted Scoreline Distribution"
+            description="The frequency of scorelines predicted by users."
+          >
+            {predictionHeatmapData.length === 0 ? (
+              <EmptyChartMessage message="No valid predicted scoreline data was found. Expected score and timesPredicted fields." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={predictionHeatmapData}
+                  margin={{
+                    top: 10,
+                    right: 20,
+                    left: 10,
+                    bottom: 70,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
+
+                  <XAxis
+                    dataKey="score"
+                    stroke="#CBD5E1"
+                    angle={-45}
+                    textAnchor="end"
+                    interval={0}
+                  />
+
+                  <YAxis stroke="#CBD5E1" />
+
+                  <Tooltip />
+
+                  <Bar
+                    dataKey="predictions"
+                    fill="#1479A8"
+                    name="Predictions"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title="4. Confidence vs Accuracy"
+            description="Each point represents a match, comparing prediction confidence with actual accuracy."
+          >
+            {confidenceData.length === 0 ? (
+              <EmptyChartMessage message="No valid confidence-versus-accuracy data was found." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart
+                  margin={{
+                    top: 20,
+                    right: 20,
+                    bottom: 20,
+                    left: 10,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
+
+                  <XAxis
+                    type="number"
+                    dataKey="confidence"
+                    name="Confidence"
+                    stroke="#CBD5E1"
+                  />
+
+                  <YAxis
+                    type="number"
+                    dataKey="accuracy"
+                    name="Accuracy"
+                    stroke="#CBD5E1"
+                  />
+
+                  <Tooltip />
+
+                  <Scatter
+                    data={confidenceData}
+                    fill="#08AAA5"
+                  />
+                </ScatterChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title="5. Predicted Goals vs Actual Goals"
+            description="A comparison of predicted and actual team goals."
+          >
+            <EmptyChartMessage
+              message="This graph cannot be plotted from the currently selected files because a matching predicted-goals and actual-goals value for each team is required."
+            />
+          </ChartCard>
+
+          <ChartCard
+            title="6. Tournament Winner Predictions"
+            description="Teams selected most frequently as predicted tournament winners."
+          >
+            {winnerData.length === 0 ? (
+              <EmptyChartMessage message="No valid tournament-winner prediction data was found." />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={winnerData}
+                  layout="vertical"
+                  margin={{
+                    top: 10,
+                    right: 20,
+                    left: 30,
+                    bottom: 10,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#12577A"
+                  />
+
+                  <XAxis
+                    type="number"
+                    stroke="#CBD5E1"
+                  />
+
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={130}
+                    stroke="#CBD5E1"
+                    tick={{ fontSize: 11 }}
+                  />
+
+                  <Tooltip />
+
+                  <Bar
+                    dataKey="predictions"
+                    fill="#08AAA5"
+                    name="Predictions"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title="7. Predicted Scorelines vs Actual Occurrences"
+            description="A comparison between predicted scoreline frequency and actual scoreline frequency."
+          >
+            <EmptyChartMessage
+              message="This graph requires matching predicted and actual scoreline records. The current files should be combined by score before plotting."
+            />
+          </ChartCard>
+        </div>
+      </section>
+    </main>
   );
 }
